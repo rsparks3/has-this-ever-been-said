@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Has this ever been said?</title>
+<meta name="description" content="Type anything and estimate whether anyone, ever, has said or written exactly those words. A language model runs in your browser.">
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
+    --accent: #2a78d6;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;           /* spoken, written, web */
+    --seq100: #cde2fb; --seq200: #9ec5f4; --seq300: #6da7ec; --seq400: #3987e5;
+    --seq500: #256abf; --seq600: #184f95; --seq700: #0d366b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+      --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+      --seq100: #0d366b; --seq200: #184f95; --seq300: #256abf; --seq400: #2a78d6;
+      --seq500: #3987e5; --seq600: #6da7ec; --seq700: #9ec5f4;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+    --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --seq100: #0d366b; --seq200: #184f95; --seq300: #256abf; --seq400: #2a78d6;
+    --seq500: #3987e5; --seq600: #6da7ec; --seq700: #9ec5f4;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 28px 16px 72px; }
+  h1 { font-size: 1.7rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  .sub { color: var(--ink-2); margin: 0 0 20px; }
+  .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  textarea { width: 100%; min-height: 120px; padding: 12px; border: 1px solid var(--axis); border-radius: 8px; background: var(--page); color: var(--ink); font: inherit; resize: vertical; }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: wait; }
+  button.ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--axis); font-weight: 500; padding: 6px 12px; font-size: .9rem; }
+  select { padding: 6px 8px; border: 1px solid var(--axis); border-radius: 6px; background: var(--page); color: var(--ink); font: inherit; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .small { color: var(--ink-2); font-size: .85rem; }
+  .muted { color: var(--muted); }
+  .err { color: #d03b3b; }
+  .progress { height: 8px; border-radius: 4px; background: var(--seq100); overflow: hidden; margin-top: 10px; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .hero .label { color: var(--ink-2); font-size: .95rem; }
+  .hero .figure { font-size: clamp(40px, 12vw, 56px); line-height: 1.05; font-weight: 600; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+  .hero .verdict { font-size: 1.1rem; font-weight: 600; }
+  .hero .note { color: var(--ink-2); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 14px; }
+  .tile { border: 1px solid var(--ring); border-radius: 10px; padding: 12px 14px; background: var(--surface); }
+  .tile .label { color: var(--ink-2); font-size: .85rem; display: flex; align-items: flex-start; gap: 6px; }
+  .tile .label .key { flex: none; margin-top: 9px; }
+  .tile .value { font-size: 1.5rem; font-weight: 600; margin-top: 2px; }
+  .tile .sub2 { color: var(--muted); font-size: .8rem; }
+  .key { display: inline-block; width: 14px; height: 3px; border-radius: 2px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; color: var(--ink-2); font-size: .85rem; margin: 6px 0 2px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .chartwrap { position: relative; width: 100%; }
+  svg.chart { width: 100%; height: 300px; display: block; }
+  .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; font-size: .85rem; box-shadow: 0 4px 16px rgba(0,0,0,.12); max-width: 300px; z-index: 2; }
+  .tip .prefix { color: var(--ink-2); margin-bottom: 4px; word-break: break-word; }
+  .tip .v { display: flex; align-items: center; gap: 6px; }
+  .tip .v b { min-width: 58px; }
+  .heat { line-height: 2.1; margin-top: 8px; word-wrap: break-word; }
+  .heat .tok { border-radius: 4px; padding: 2px 3px; margin: 0 1px; white-space: pre-wrap; cursor: default; display: inline; }
+  .heat .tok:hover, .heat .tok:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
+  .scale { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: .8rem; margin-top: 8px; }
+  .scale i { display: inline-block; width: 20px; height: 12px; border-radius: 3px; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--ink-2); }
+  table { border-collapse: collapse; width: 100%; font-size: .85rem; margin-top: 8px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .assume { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px 18px; }
+  .assume label { display: block; font-size: .85rem; color: var(--ink-2); }
+  .assume input { width: 100%; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--axis); border-radius: 6px; background: var(--page); color: var(--ink); font: inherit; }
+  .assume .total { font-weight: 600; }
+  .links a { margin-right: 14px; color: var(--accent); }
+  .eq { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9rem; background: var(--page); border: 1px solid var(--grid); border-radius: 8px; padding: 10px 12px; overflow-wrap: anywhere; }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 24px; }
+  footer a { color: var(--ink-2); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Has this ever been said?</h1>
+  <p class="sub">Type anything. A language model estimates how probable your exact words are, and the dashboard multiplies that by how much language humanity has ever produced to guess whether anyone, anywhere, has ever said or written it before.</p>
+
+  <section class="card">
+    <textarea id="text" placeholder="Type a sentence, a phrase, a paragraph..."></textarea>
+    <div class="row">
+      <button id="go">Has anyone ever said this?</button>
+      <span class="small" id="status"></span>
+    </div>
+    <div class="row" id="examples">
+      <span class="small muted">Try:</span>
+      <button class="ghost" data-ex="Hello, how are you?">Hello, how are you?</button>
+      <button class="ghost" data-ex="To be or not to be, that is the question.">To be or not to be</button>
+      <button class="ghost" data-ex="I think I left my keys on the kitchen counter again.">Ordinary sentence</button>
+      <button class="ghost" data-ex="The purple accountant juggled seventeen frozen lasagnas during the eclipse.">Nonsense sentence</button>
+    </div>
+    <div id="browser-setup" hidden>
+      <div class="row">
+        <label class="small">Model
+          <select id="model-pick">
+            <option value="HuggingFaceTB/SmolLM-360M">SmolLM 360M (390 MB download, recommended)</option>
+            <option value="HuggingFaceTB/SmolLM-135M">SmolLM 135M (180 MB download, quicker but rougher)</option>
+          </select>
+        </label>
+        <button class="ghost" id="load">Load model</button>
+        <span class="small" id="load-note">The model runs entirely in your browser. It is downloaded once from Hugging Face and cached; nothing you type leaves your computer.</span>
+      </div>
+      <div class="progress" id="progress" hidden><i id="progress-bar"></i></div>
+    </div>
+  </section>
+
+  <div id="results" hidden>
+    <section class="card">
+      <div class="hero">
+        <div class="label">Chance that someone, somewhere, has already said or written exactly this</div>
+        <div class="figure" id="hero"></div>
+        <div class="verdict" id="verdict"></div>
+        <div class="note" id="hero-note"></div>
+      </div>
+      <div class="tiles">
+        <div class="tile"><div class="label"><i class="key" style="background:var(--s1)"></i>Spoken aloud by anyone, ever</div><div class="value" id="t-spoken"></div><div class="sub2" id="t-spoken-sub"></div></div>
+        <div class="tile"><div class="label"><i class="key" style="background:var(--s2)"></i>Written down anywhere</div><div class="value" id="t-written"></div><div class="sub2" id="t-written-sub"></div></div>
+        <div class="tile"><div class="label"><i class="key" style="background:var(--s3)"></i>On the public web</div><div class="value" id="t-web"></div><div class="sub2" id="t-web-sub"></div></div>
+        <div class="tile"><div class="label">Became unique at word</div><div class="value" id="t-unique"></div><div class="sub2" id="t-unique-sub"></div></div>
+        <div class="tile"><div class="label">Model probability of the text</div><div class="value" id="t-prob"></div><div class="sub2" id="t-prob-sub"></div></div>
+        <div class="tile"><div class="label">Surprise per token</div><div class="value" id="t-bits"></div><div class="sub2" id="t-bits-sub"></div></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Where your text became unique</h2>
+      <p class="small">Chance that the text <em>up to each word</em> has been produced before, by scope. Most sentences start out as things everyone has said and become unique a few words in.</p>
+      <div class="legend">
+        <span><i class="key" style="background:var(--s1)"></i>Spoken</span>
+        <span><i class="key" style="background:var(--s2)"></i>Written</span>
+        <span><i class="key" style="background:var(--s3)"></i>Public web</span>
+      </div>
+      <div class="chartwrap">
+        <svg class="chart" id="chart" role="img" aria-label="Probability that each prefix of the text has been said before"></svg>
+        <div class="tip" id="tip" hidden></div>
+      </div>
+      <details>
+        <summary>Table view</summary>
+        <table id="prefix-table"><thead><tr><th>#</th><th>Prefix ends with</th><th class="num">log10 P</th><th class="num">Spoken</th><th class="num">Written</th><th class="num">Web</th></tr></thead><tbody></tbody></table>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>Which words carry the surprise</h2>
+      <p class="small">Each token is shaded by how unexpected the model found it given everything before it. Hover a token to see its probability, its rank among the model's guesses, and what the model expected instead.</p>
+      <div class="heat" id="heat"></div>
+      <div class="scale"><span>expected</span><i style="background:var(--seq100)"></i><i style="background:var(--seq200)"></i><i style="background:var(--seq300)"></i><i style="background:var(--seq400)"></i><i style="background:var(--seq500)"></i><i style="background:var(--seq600)"></i><i style="background:var(--seq700)"></i><span>surprising</span></div>
+      <details>
+        <summary>Table view</summary>
+        <table id="token-table"><thead><tr><th>Token</th><th class="num">P(token)</th><th class="num">Bits</th><th class="num">Rank</th><th>Model expected</th></tr></thead><tbody></tbody></table>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>Check the web yourself</h2>
+      <p class="small">If the "public web" number says likely, an exact-phrase search should find it. (Searches only the first 300 characters.)</p>
+      <div class="links" id="links"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Assumptions you can change</h2>
+    <p class="small">How much language has humanity produced? Nobody knows precisely, so these are order-of-magnitude defaults. Edit them and the results update instantly.</p>
+    <div class="assume">
+      <label>Humans who have ever lived (billions)<input type="number" id="a-humans" value="117" min="1" step="1"></label>
+      <label>Average speaking years per person<input type="number" id="a-years" value="20" min="1" step="1"></label>
+      <label>Words spoken per person per day<input type="number" id="a-words" value="16000" min="100" step="500"></label>
+      <label>Total words ever spoken<div class="total" id="a-spoken-total"></div></label>
+      <label>Total words ever written (log10)<input type="number" id="a-written" value="17" min="10" max="22" step="0.5"></label>
+      <label>Words on the public, searchable web (log10)<input type="number" id="a-web" value="15" min="10" max="20" step="0.5"></label>
+    </div>
+    <p class="small" style="margin-bottom:0">Defaults: about 117 billion people have ever been born (Population Reference Bureau); people speak roughly 16,000 words a day (Mehl et al., 2007); historical life expectancy keeps the average speaking lifetime short. Writing is dominated by email and chat, around 10<sup>17</sup> words; every book ever printed is only about 10<sup>13</sup>. The indexed web is roughly 10<sup>15</sup> words.</p>
+  </section>
+
+  <section class="card">
+    <h2>How the estimate works</h2>
+    <div class="eq">P(text) = Π P(token<sub>i</sub> | tokens before it)        from the language model<br>expected prior occurrences  λ = N × P(text)      N = words ever produced in that scope<br>P(said before) = 1 − e<sup>−λ</sup></div>
+    <p class="small">Treats every position in all of human language as an independent draw from the model's distribution. The model (<span id="model-name">not loaded yet</span>) learned from written web text, so it under-rates how repetitive speech is: greetings, song lyrics and stock phrases are said far more often than it thinks. It also treats capitalization and punctuation variants as different texts. Read the results as "roughly how many orders of magnitude", not as a measurement.</p>
+  </section>
+  <footer>Open source: <a href="https://github.com/rsparks3/has-this-ever-been-said">github.com/rsparks3/has-this-ever-been-said</a>. Models by Hugging Face (SmolLM), run with Transformers.js.</footer>
+</main>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const SUP = {'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','-':'⁻'};
+  const sup = (n) => String(n).split('').map(c => SUP[c] ?? c).join('');
+  const fmtPlain = (v) => v >= 100 ? Number(v.toPrecision(2)).toLocaleString() : Number(v.toPrecision(2)).toString();
+  const pow10 = (x) => {                       // x: log10 of a number -> "3.2×10¹¹"
+    if (!isFinite(x)) return x > 0 ? '∞' : '0';
+    const e = Math.floor(x), m = Math.pow(10, x - e);
+    if (e >= -3 && e < 6) return fmtPlain(Math.pow(10, x));
+    const ms = m >= 9.95 ? '1' : m.toFixed(1);
+    return (ms === '1' || ms === '1.0' ? '' : ms + '×') + '10' + sup(ms === '1' ? e + 1 : e);
+  };
+  const log10 = Math.log10;
+  const LN10 = Math.LN10, LN2 = Math.LN2;
+
+  // Probability of "at least once": 1 - exp(-lambda), computed in log space for tiny lambdas.
+  function pSeen(logLambda) {
+    if (logLambda > 2) return 1;
+    return -Math.expm1(-Math.pow(10, logLambda));
+  }
+  function fmtP(p, logLambda) {
+    if (p >= 0.9999) return '> 99.99%';
+    if (p >= 0.01) return (p * 100).toPrecision(p >= 0.1 ? 3 : 2) + '%';
+    if (p >= 1e-4) return (p * 100).toPrecision(2) + '%';
+    return '1 in ' + pow10(-logLambda);
+  }
+  function verdictFor(p) {
+    if (p >= 0.999) return 'Almost certainly, yes.';
+    if (p >= 0.9) return 'Very likely.';
+    if (p >= 0.5) return 'Probably.';
+    if (p >= 0.1) return 'Maybe. It is a toss-up leaning no.';
+    if (p >= 1e-3) return 'Unlikely.';
+    return 'Almost certainly not. You appear to be the first.';
+  }
+
+  function assumptions() {
+    const humans = +$('a-humans').value * 1e9, years = +$('a-years').value, wpd = +$('a-words').value;
+    const spoken = humans * years * 365 * wpd;
+    const written = Math.pow(10, +$('a-written').value), web = Math.pow(10, +$('a-web').value);
+    $('a-spoken-total').textContent = pow10(log10(spoken)) + ' words';
+    return { spoken: log10(spoken), written: log10(written), web: log10(web), total: log10(spoken + written) };
+  }
+
+  let last = null;   // last score result
+  const SCOPES = [['spoken', 'Spoken', 'var(--s1)'], ['written', 'Written', 'var(--s2)'], ['web', 'Public web', 'var(--s3)']];
+
+  function render() {
+    if (!last) return;
+    const A = assumptions();
+    const r = last;
+    const L = r.log10p;
+    const lamTotal = A.total + L;
+    const pTotal = pSeen(lamTotal);
+    $('hero').textContent = fmtP(pTotal, lamTotal);
+    $('verdict').textContent = verdictFor(pTotal);
+    const occ = (s) => pow10(A[s] + L);
+    $('hero-note').textContent = `Expected number of times it has already occurred: about ${occ('spoken')} spoken and ${occ('written')} written, given ${r.n_words} words (${r.n_tokens} tokens).`;
+
+    for (const [key] of SCOPES) {
+      const lam = A[key] + L, p = pSeen(lam);
+      $('t-' + key).textContent = fmtP(p, lam);
+      $('t-' + key + '-sub').textContent = `~${pow10(lam)} expected prior occurrences`;
+    }
+    let uniqueAt = -1;   // first word at which the running total drops below a coin flip
+    for (let i = 0; i < r.word_log10p.length; i++) {
+      if (pSeen(A.total + r.word_log10p[i]) < 0.5) { uniqueAt = i; break; }
+    }
+    if (uniqueAt < 0) {
+      $('t-unique').textContent = 'never';
+      $('t-unique-sub').textContent = 'every prefix has probably been said';
+    } else {
+      $('t-unique').textContent = String(uniqueAt + 1) + ' of ' + r.n_words;
+      $('t-unique-sub').textContent = '"' + r.words.slice(0, uniqueAt + 1).join(' ') + '"';
+    }
+    $('t-prob').textContent = pow10(L);
+    $('t-prob-sub').textContent = 'log10 P = ' + L.toFixed(1);
+    $('t-bits').textContent = r.bits_per_token.toFixed(1) + ' bits';
+    $('t-bits-sub').textContent = 'perplexity ' + Math.pow(2, r.bits_per_token).toPrecision(3);
+    drawChart(r, A);
+    drawHeat(r);
+    drawLinks(r);
+    $('results').hidden = false;
+  }
+
+  // ---------- prefix chart ----------
+  function drawChart(r, A) {
+    const svg = $('chart');
+    const W = svg.clientWidth || 900, H = 300, m = { t: 14, r: 86, b: 44, l: 44 };
+    const n = r.words.length;
+    const pw = W - m.l - m.r, ph = H - m.t - m.b;
+    const x = (i) => m.l + (n === 1 ? pw / 2 : (i / (n - 1)) * pw);
+    const y = (p) => m.t + (1 - p) * ph;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    const series = SCOPES.map(([key, name, color]) => ({ key, name, color,
+      pts: r.word_log10p.map((l, i) => ({ i, lam: A[key] + l, p: pSeen(A[key] + l) })) }));
+    const el = (tag, attrs, text) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
+    svg.replaceChildren();
+    for (const p of [0, 0.25, 0.5, 0.75, 1]) {
+      svg.appendChild(el('line', { x1: m.l, x2: m.l + pw, y1: y(p), y2: y(p), stroke: p === 0 ? 'var(--axis)' : 'var(--grid)', 'stroke-width': 1 }));
+      svg.appendChild(el('text', { x: m.l - 8, y: y(p) + 4, 'text-anchor': 'end', fill: 'var(--muted)', 'font-size': 11, style: 'font-variant-numeric: tabular-nums' }, (p * 100) + '%'));
+    }
+    const step = Math.max(1, Math.ceil(n / 12));
+    for (let i = 0; i < n; i += step) svg.appendChild(el('text', { x: x(i), y: H - 24, 'text-anchor': 'middle', fill: 'var(--muted)', 'font-size': 11 }, String(i + 1)));
+    svg.appendChild(el('text', { x: m.l + pw / 2, y: H - 6, 'text-anchor': 'middle', fill: 'var(--muted)', 'font-size': 11 }, 'words'));
+    const ends = [];
+    for (const s of series) {
+      const d = s.pts.map((q, i) => (i ? 'L' : 'M') + x(q.i).toFixed(1) + ' ' + y(q.p).toFixed(1)).join(' ');
+      svg.appendChild(el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+      const lastPt = s.pts[n - 1];
+      svg.appendChild(el('circle', { cx: x(n - 1), cy: y(lastPt.p), r: 6, fill: s.color, stroke: 'var(--surface)', 'stroke-width': 2 }));
+      ends.push({ s, yy: y(lastPt.p) });
+    }
+    ends.sort((a, b) => a.yy - b.yy);
+    for (let k = 0; k < ends.length; k++) {
+      const e = ends[k], prev = ends[k - 1], next = ends[k + 1];
+      const collides = (prev && Math.abs(prev.yy - e.yy) < 13) || (next && Math.abs(next.yy - e.yy) < 13);
+      if (!collides) svg.appendChild(el('text', { x: m.l + pw + 10, y: e.yy + 4, fill: 'var(--ink-2)', 'font-size': 12 }, e.s.name));
+    }
+    const cross = el('line', { y1: m.t, y2: m.t + ph, stroke: 'var(--ink-2)', 'stroke-width': 1, visibility: 'hidden' });
+    svg.appendChild(cross);
+    const dots = series.map(s => { const c = el('circle', { r: 5, fill: s.color, stroke: 'var(--surface)', 'stroke-width': 2, visibility: 'hidden' }); svg.appendChild(c); return c; });
+    const hit = el('rect', { x: m.l, y: m.t, width: pw, height: ph, fill: 'transparent' });
+    svg.appendChild(hit);
+    const tip = $('tip');
+    const show = (ev) => {
+      const rect = svg.getBoundingClientRect();
+      const px = (ev.clientX - rect.left) * (W / rect.width);
+      const i = n === 1 ? 0 : Math.max(0, Math.min(n - 1, Math.round(((px - m.l) / pw) * (n - 1))));
+      cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.setAttribute('visibility', 'visible');
+      tip.replaceChildren();
+      const pre = document.createElement('div'); pre.className = 'prefix';
+      pre.textContent = `word ${i + 1}: "${r.words.slice(Math.max(0, i - 7), i + 1).join(' ')}"`;
+      tip.appendChild(pre);
+      series.forEach((s, k) => {
+        const q = s.pts[i];
+        dots[k].setAttribute('cx', x(i)); dots[k].setAttribute('cy', y(q.p)); dots[k].setAttribute('visibility', 'visible');
+        const row = document.createElement('div'); row.className = 'v';
+        const key = document.createElement('i'); key.className = 'key'; key.style.background = s.color;
+        const b = document.createElement('b'); b.textContent = fmtP(q.p, q.lam);
+        const span = document.createElement('span'); span.className = 'muted'; span.textContent = s.name + ' · ~' + pow10(q.lam) + ' occurrences';
+        row.append(key, b, span); tip.appendChild(row);
+      });
+      tip.hidden = false;
+      const left = (x(i) / W) * rect.width;
+      tip.style.left = Math.min(rect.width - tip.offsetWidth - 4, Math.max(0, left + 12)) + 'px';
+      tip.style.top = '8px';
+    };
+    const hide = () => { tip.hidden = true; cross.setAttribute('visibility', 'hidden'); dots.forEach(d => d.setAttribute('visibility', 'hidden')); };
+    hit.addEventListener('pointermove', show); hit.addEventListener('pointerleave', hide);
+    const tb = $('prefix-table').querySelector('tbody'); tb.replaceChildren();
+    r.words.forEach((w, i) => {
+      const tr = document.createElement('tr');
+      const cells = [String(i + 1), w, r.word_log10p[i].toFixed(1), ...series.map(s => fmtP(s.pts[i].p, s.pts[i].lam))];
+      cells.forEach((c, k) => { const td = document.createElement('td'); if (k >= 2) td.className = 'num'; td.textContent = c; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+  }
+
+  // ---------- token heat ----------
+  function drawHeat(r) {
+    const heat = $('heat'); heat.replaceChildren();
+    const steps = ['--seq100', '--seq200', '--seq300', '--seq400', '--seq500', '--seq600', '--seq700'];
+    const theme = document.documentElement.dataset.theme;
+    const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+    const tb = $('token-table').querySelector('tbody'); tb.replaceChildren();
+    for (const t of r.tokens) {
+      const bits = t.bits;                       // 0 bits = certain; ~20 bits = 1 in a million
+      const k = Math.min(6, Math.floor(bits / 3));
+      const span = document.createElement('span');
+      span.className = 'tok'; span.tabIndex = 0;
+      span.style.background = `var(${steps[k]})`;
+      span.style.color = (dark ? k >= 5 : k >= 3) ? (dark ? '#0b0b0b' : '#ffffff') : 'var(--ink)';
+      span.textContent = t.text.replace(/\n/g, '↵\n');
+      const expected = t.rank === 1 ? 'this was the model\'s top guess' : `model expected "${t.expected}" (${pow10(t.expected_log10p)})`;
+      span.title = `P = ${pow10(t.log10p)}  ·  ${bits.toFixed(1)} bits  ·  rank ${t.rank.toLocaleString()}  ·  ${expected}`;
+      heat.appendChild(span);
+      const tr = document.createElement('tr');
+      [t.text, pow10(t.log10p), bits.toFixed(1), t.rank.toLocaleString(), t.rank === 1 ? '(this token)' : t.expected].forEach((c, i) => {
+        const td = document.createElement('td'); if (i >= 1 && i <= 3) td.className = 'num'; td.textContent = c; tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    }
+  }
+
+  function drawLinks(r) {
+    const q = encodeURIComponent('"' + $('text').value.trim().slice(0, 300).replace(/"/g, '') + '"');
+    const box = $('links'); box.replaceChildren();
+    [['Google', 'https://www.google.com/search?q=' + q], ['Google Books', 'https://www.google.com/search?tbm=bks&q=' + q], ['Bing', 'https://www.bing.com/search?q=' + q], ['DuckDuckGo', 'https://duckduckgo.com/?q=' + q]]
+      .forEach(([name, href]) => { const a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = name + ' ↗'; box.appendChild(a); });
+  }
+
+  // ---------- scoring backends ----------
+  // Server mode: a local FastAPI server (server.py) holds the model.  Browser mode: Transformers.js
+  // runs an ONNX copy of the model in WebAssembly; the page then works as a static site.
+  const setStatus = (msg, err) => { $('status').textContent = msg; $('status').className = err ? 'small err' : 'small'; };
+  const MAX_BROWSER_TOKENS = 256;
+  const PARAMS = new URLSearchParams(location.search);
+  // q4 keeps activations in full precision and tracked the fp32 model closely in tests; q8 (dynamic
+  // 8-bit activations) was off by several orders of magnitude, mostly on the first token.
+  const DTYPE = PARAMS.get('dtype') || 'q4';          // testing hook: ?dtype=fp32 etc.
+  const CONTEXT = PARAMS.get('ctx') || '';             // testing hook: ?ctx=%0A to score after a newline
+  if (PARAMS.get('model')) {                           // testing hook: ?model=org/name
+    const sel = $('model-pick');
+    if (![...sel.options].some(o => o.value === PARAMS.get('model'))) sel.add(new Option(PARAMS.get('model'), PARAMS.get('model')));
+    sel.value = PARAMS.get('model');
+  }
+
+  const serverBackend = {
+    name: 'server',
+    async ready() { return true; },
+    async score(text) {
+      const res = await fetch('api/score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      return data;
+    },
+  };
+
+  const browserBackend = {
+    name: 'browser', tf: null, tokenizer: null, model: null, modelId: null, loading: null,
+    async ready() {
+      const id = $('model-pick').value;
+      if (this.model && this.modelId === id) return true;
+      if (this.loading) return this.loading;
+      this.loading = (async () => {
+        $('load').disabled = true; $('model-pick').disabled = true;
+        $('progress').hidden = false; $('progress-bar').style.width = '0%';
+        try {
+          setStatus('loading Transformers.js…');
+          this.tf ??= await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1');
+          const files = new Map();
+          const progress_callback = (p) => {
+            if (p.status === 'progress' && p.total) files.set(p.file, [p.loaded, p.total]);
+            if (p.status === 'done' && files.has(p.file)) files.set(p.file, [files.get(p.file)[1], files.get(p.file)[1]]);
+            let loaded = 0, total = 0; for (const [l, t] of files.values()) { loaded += l; total += t; }
+            if (total) { $('progress-bar').style.width = (100 * loaded / total).toFixed(1) + '%'; setStatus(`downloading model… ${(loaded / 1e6).toFixed(0)} / ${(total / 1e6).toFixed(0)} MB`); }
+          };
+          if (this.model) { await this.model.dispose(); this.model = null; }
+          this.tokenizer = await this.tf.AutoTokenizer.from_pretrained(id, { progress_callback });
+          this.model = await this.tf.AutoModelForCausalLM.from_pretrained(id, { dtype: DTYPE, device: 'wasm', progress_callback });
+          this.modelId = id;
+          $('model-name').textContent = `${id} (${DTYPE}, in your browser)`;
+          $('progress').hidden = true;
+          setStatus('model ready');
+          return true;
+        } finally { $('load').disabled = false; $('model-pick').disabled = false; this.loading = null; }
+      })();
+      return this.loading;
+    },
+    bosId() {
+      const tok = this.tokenizer;
+      const special = tok.bos_token ?? tok.eos_token ?? '<|endoftext|>';
+      const ids = tok.encode(special, { add_special_tokens: false });
+      return ids.length === 1 ? ids[0] : 0;
+    },
+    async score(text) {
+      const t0 = performance.now();
+      const tok = this.tokenizer, tf = this.tf;
+      const enc = tok(text, { add_special_tokens: false, return_tensor: false });
+      const ids = enc.input_ids.slice(0, MAX_BROWSER_TOKENS).map(Number);
+      if (!ids.length) throw new Error('No tokens.');
+      // Input = start-of-text marker (+ optional test context) + the text, exactly as scorer.py does it.
+      const ctxIds = CONTEXT ? tok(CONTEXT, { add_special_tokens: false, return_tensor: false }).input_ids.map(Number) : [];
+      const prefix = [this.bosId(), ...ctxIds];
+      const full = [...prefix, ...ids];
+      const input_ids = new tf.Tensor('int64', BigInt64Array.from(full, (v) => BigInt(v)), [1, full.length]);
+      const attention_mask = new tf.Tensor('int64', BigInt64Array.from(full, () => 1n), [1, full.length]);
+      let { logits } = await this.model({ input_ids, attention_mask });
+      if (logits.type !== 'float32') logits = logits.to('float32');
+      const V = logits.dims[2], data = logits.data;
+      const tokens = [], words = [], word_log10p = [];
+      let cum = 0, pieces = [];
+      const piece = (i) => tok.decode([i], { skip_special_tokens: false, clean_up_tokenization_spaces: false });
+      for (let k = 0; k < ids.length; k++) {
+        const off = (prefix.length - 1 + k) * V;        // row i predicts input position i+1
+        let mx = -Infinity, arg = 0;
+        for (let j = 0; j < V; j++) { const v = data[off + j]; if (v > mx) { mx = v; arg = j; } }
+        let s = 0; for (let j = 0; j < V; j++) s += Math.exp(data[off + j] - mx);
+        const lse = mx + Math.log(s);
+        const target = data[off + ids[k]];
+        let rank = 1; for (let j = 0; j < V; j++) if (data[off + j] > target) rank++;
+        const lp = target - lse, l10 = lp / LN10;
+        const p = piece(ids[k]); pieces.push(p);
+        const startsWord = k === 0 || /^\s/.test(p) || pieces[k - 1].endsWith('\n');
+        if (startsWord) { words.push(p.trim()); word_log10p.push(0); } else { words[words.length - 1] += p; }
+        cum += l10; word_log10p[word_log10p.length - 1] = cum;
+        tokens.push({ text: p, log10p: l10, bits: -lp / LN2, rank, expected: piece(arg), expected_log10p: (mx - lse) / LN10, word: words.length - 1 });
+      }
+      return { model: this.modelId, n_tokens: ids.length, n_words: words.length, log10p: cum,
+               bits_per_token: -cum * LN10 / LN2 / ids.length, tokens, words, word_log10p,
+               seconds: (performance.now() - t0) / 1000 };
+    },
+  };
+
+  let backend = null;
+  async function pickBackend() {
+    try {
+      const res = await fetch('api/info', { cache: 'no-store' });
+      if (res.ok) {
+        const info = await res.json();
+        $('model-name').textContent = info.model_id + ' (on the server)';
+        if (info.error) { setStatus('Model failed to load: ' + info.error, true); return serverBackend; }
+        if (!info.ready) { setStatus('loading the language model…'); setTimeout(pickBackend, 1500); return serverBackend; }
+        setStatus('model ready');
+        return serverBackend;
+      }
+    } catch { /* no server: static hosting */ }
+    $('browser-setup').hidden = false;
+    setStatus('');
+    return browserBackend;
+  }
+
+  async function run() {
+    const text = $('text').value.trim();
+    if (!text) return;
+    $('go').disabled = true;
+    try {
+      await backend.ready();
+      setStatus('scoring…');
+      const data = await backend.score(text);
+      last = data; render();
+      setStatus(`scored ${data.n_tokens} tokens in ${data.seconds.toFixed(2)} s`);
+    } catch (e) {
+      console.error(e);
+      setStatus(String(e.message || e), true);
+      $('progress').hidden = true;
+    } finally { $('go').disabled = false; }
+  }
+  $('go').addEventListener('click', run);
+  $('load').addEventListener('click', () => backend.ready().catch(e => setStatus(String(e.message || e), true)));
+  $('text').addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') run(); });
+  $('examples').addEventListener('click', (e) => { const ex = e.target.dataset && e.target.dataset.ex; if (ex) { $('text').value = ex; run(); } });
+  ['a-humans', 'a-years', 'a-words', 'a-written', 'a-web'].forEach(id => $(id).addEventListener('input', () => { assumptions(); render(); }));
+  addEventListener('resize', () => { if (last) drawChart(last, assumptions()); });
+  assumptions();
+
+  backend = await pickBackend();
+  const q = PARAMS.get('q');
+  if (q) { $('text').value = q; run(); }
+</script>
+</body>
+</html>
